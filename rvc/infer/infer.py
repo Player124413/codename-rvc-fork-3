@@ -313,7 +313,9 @@ class VoiceConverter:
                     print(f"Converted audio chunk {len(converted_chunks)}")
 
             if split_audio:
-                audio_opt = merge_audio(chunks, converted_chunks, intervals, 16000, self.tgt_sr)
+                audio_opt = merge_audio(
+                    chunks, converted_chunks, intervals, 16000, self.tgt_sr
+                )
             else:
                 audio_opt = converted_chunks[0]
 
@@ -460,7 +462,6 @@ class VoiceConverter:
             if os.path.isfile(weight_root)
             else None
         )
-
     def setup_network(self):
         """
         Sets up the network configuration based on the loaded checkpoint.
@@ -472,17 +473,31 @@ class VoiceConverter:
 
             self.version = self.cpt.get("version", "v1")
             self.text_enc_hidden_dim = 768 if self.version == "v2" else 256
-            self.vocoder = self.cpt.get("vocoder", "HiFi-GAN")
-            self.net_g = Synthesizer(
-                *self.cpt["config"],
-                use_f0=self.use_f0,
-                text_enc_hidden_dim=self.text_enc_hidden_dim,
-                vocoder=self.vocoder,
-            )
-            del self.net_g.enc_q
-            self.net_g.load_state_dict(self.cpt["weight"], strict=False)
-            self.net_g = self.net_g.to(self.config.device).float()
-            self.net_g.eval()
+        
+            # Определяем список вокодеров в порядке приоритета
+            vocoders = ["HiFi-GAN", "RefineGAN", "MRF-HiFiGAN"]
+        
+            # Пытаемся использовать вокодеры по очереди
+            for vocoder in vocoders:
+                try:
+                   self.vocoder = vocoder
+                   self.net_g = Synthesizer(
+                       *self.cpt["config"],
+                       use_f0=self.use_f0,
+                       text_enc_hidden_dim=self.text_enc_hidden_dim,
+                       vocoder=self.vocoder,
+                )
+                   del self.net_g.enc_q
+                   self.net_g.load_state_dict(self.cpt["weight"], strict=False)
+                   self.net_g = self.net_g.to(self.config.device).float()
+                   self.net_g.eval()
+                
+                   # Если всё прошло успешно, выходим из цикла
+                   break
+                except Exception as e:
+                    print(f"Failed to initialize {vocoder}: {e}")
+                    continue
+              
 
     def setup_vc_instance(self):
         """
